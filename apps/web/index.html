@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deepfake Shield — Compression-Robust Detection Suite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="mesh-bg"></div>
+
+  <!-- Header Navigation -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="brand-badge">
+        <svg class="shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">Deepfake Shield</h1>
+        <p class="brand-subtitle">Compression-Robust Multi-Scale Detection</p>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <button class="nav-btn active" data-tab="tab-analyze" id="btn-tab-analyze">Analyze</button>
+      <button class="nav-btn" data-tab="tab-robustness" id="btn-tab-robustness">Compression Lab</button>
+      <button class="nav-btn" data-tab="tab-frequency" id="btn-tab-frequency">Frequency View</button>
+      <button class="nav-btn" data-tab="tab-modelcard" id="btn-tab-modelcard">Model Card & Report</button>
+    </nav>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+    
+    <!-- Tab 1: Single Media Analysis -->
+    <section class="tab-pane active" id="tab-analyze">
+      <div class="grid-2col">
+        
+        <!-- Left: Upload & Preview Card -->
+        <div class="glass-card upload-section">
+          <div class="card-header">
+            <h2>Media Ingestion</h2>
+            <span class="badge" id="api-status-badge">System Ready</span>
+          </div>
+
+          <div class="drop-zone" id="drop-zone">
+            <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden>
+            <div class="drop-content" id="drop-prompt">
+              <div class="upload-icon-circle">
+                <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" fill="none" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                </svg>
+              </div>
+              <p class="drop-title">Drag & drop image or <span class="highlight">browse</span></p>
+              <p class="drop-hint">Supports JPEG, PNG, WebP up to 25 MB</p>
+            </div>
+            
+            <div class="preview-wrapper" id="preview-wrapper" style="display: none;">
+              <img id="preview-image" alt="Uploaded media preview">
+              <button class="btn-clear" id="btn-clear-preview" title="Remove image">&times;</button>
+            </div>
+          </div>
+
+          <div class="action-bar">
+            <button class="btn-primary" id="btn-analyze" disabled>
+              <span class="btn-text">Run Deepfake Verification</span>
+              <div class="spinner" id="analyze-spinner" style="display: none;"></div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Results & Verdict Card -->
+        <div class="glass-card results-section" id="results-card">
+          <div class="card-header">
+            <h2>Verification Verdict</h2>
+            <span class="model-badge" id="model-tag">Model: Ensemble v1.0</span>
+          </div>
+
+          <div class="empty-state" id="empty-state">
+            <div class="radar-pulse"></div>
+            <p>Upload an image to inspect spatial artifacts and frequency signatures.</p>
+          </div>
+
+          <div class="verdict-content" id="verdict-content" style="display: none;">
+            
+            <!-- Verdict Banner -->
+            <div class="verdict-banner" id="verdict-banner">
+              <div class="verdict-header-row">
+                <span class="verdict-pill" id="verdict-pill">AUTHENTIC</span>
+                <span class="confidence-num" id="confidence-num">98.4%</span>
+              </div>
+              <h3 class="verdict-headline" id="verdict-headline">Authentic Media</h3>
+              <p class="verdict-caveat" id="verdict-caveat">Calibrated uncertainty estimation, not legal proof.</p>
+            </div>
+
+            <!-- Probability Bar -->
+            <div class="prob-bar-container">
+              <div class="prob-bar-labels">
+                <span>Authentic (Real &lt; 0.35)</span>
+                <span>Uncertain Band</span>
+                <span>AI-Generated (&gt; 0.65)</span>
+              </div>
+              <div class="prob-track">
+                <div class="prob-fill" id="prob-fill" style="width: 15%;"></div>
+                <div class="prob-marker" id="prob-marker" style="left: 15%;"></div>
+              </div>
+            </div>
+
+            <!-- Dual-Stream Diagnostics -->
+            <div class="diagnostics-grid">
+              <div class="diag-card">
+                <span class="diag-label">Global Context Score</span>
+                <span class="diag-val" id="score-global">--</span>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label">Facial Landmark Stream</span>
+                <span class="diag-val" id="score-face">--</span>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label">Face Area Ratio</span>
+                <span class="diag-val" id="face-ratio">--</span>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label">Inference Latency</span>
+                <span class="diag-val" id="inference-latency">-- ms</span>
+              </div>
+            </div>
+
+            <!-- Explainability Overlay Controls -->
+            <div class="explainability-box" id="explainability-box">
+              <div class="explain-header">
+                <h4>Spatial Anomaly Map (Grad-CAM / Residuals)</h4>
+                <div class="opacity-control">
+                  <label for="heatmap-opacity">Overlay Opacity:</label>
+                  <input type="range" id="heatmap-opacity" min="0" max="100" value="70">
+                </div>
+              </div>
+              <div class="heatmap-container" id="heatmap-container">
+                <img id="heatmap-display" alt="Heatmap visual">
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Tab 2: Compression Lab -->
+    <section class="tab-pane" id="tab-robustness">
+      <div class="glass-card">
+        <div class="card-header">
+          <div>
+            <h2>Social Media Compression Stress Lab</h2>
+            <p class="card-subtitle">Test how video encoding and aggressive JPEG re-compression degrade forgery cues</p>
+          </div>
+          <div class="preset-buttons">
+            <button class="btn-chip active" id="btn-qf-clean">Clean</button>
+            <button class="btn-chip" id="btn-qf-wa">WhatsApp-Sim (QF 70)</button>
+            <button class="btn-chip" id="btn-qf-agg">Aggressive (QF 30)</button>
+          </div>
+        </div>
+
+        <div class="robustness-grid">
+          <div class="qf-slider-panel">
+            <div class="slider-row">
+              <label for="qf-slider">Quality Factor (QF): <span class="qf-val-badge" id="qf-val-display">70</span></label>
+              <input type="range" id="qf-slider" min="10" max="100" value="70" step="5">
+            </div>
+            <div class="diff-view-box">
+              <div class="diff-header">
+                <span>Compressed Frame Preview</span>
+                <span class="status-tag" id="qf-pred-tag">P(Fake): --</span>
+              </div>
+              <div class="diff-img-container">
+                <img id="compressed-preview-img" alt="Re-compressed visual">
+              </div>
+            </div>
+          </div>
+
+          <div class="curve-chart-panel">
+            <h3>Robustness Curve: P(Fake) vs Degradation Level</h3>
+            <p class="chart-desc">Demonstrates resilience across Clean &rarr; QF90 &rarr; QF70 &rarr; QF50 &rarr; QF30.</p>
+            <div class="chart-canvas-wrapper">
+              <canvas id="robustness-chart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Frequency View (DIP Tie-In) -->
+    <section class="tab-pane" id="tab-frequency">
+      <div class="glass-card">
+        <div class="card-header">
+          <div>
+            <h2>Frequency-Domain Spectrogram &amp; DWT Analysis</h2>
+            <p class="card-subtitle">Digital Image Processing (DIP) 2D FFT Log-Magnitude and Wavelet Sub-bands</p>
+          </div>
+        </div>
+
+        <div class="freq-view-grid">
+          <div class="freq-card">
+            <h3>2D FFT Log-Magnitude Spectrum</h3>
+            <p class="freq-note">Reveals high-frequency checkerboard anomalies characteristic of generative upsampling.</p>
+            <div class="spectrum-img-box">
+              <img id="spectrum-display" alt="FFT Spectrum">
+            </div>
+          </div>
+
+          <div class="freq-card info-card">
+            <h3>Why Compression Hides Deepfake Cues</h3>
+            <ul class="dip-insights-list">
+              <li>
+                <strong>DCT Quantization:</strong> High-frequency coefficients in $8\times 8$ blocks are divided by large quant-table values and rounded to 0.
+              </li>
+              <li>
+                <strong>Haar Wavelet Attenuation:</strong> High-frequency subbands ($LH_2, HL_2, HH_2$) lose energy rapidly under quality factors $&le; 50$.
+              </li>
+              <li>
+                <strong>Multi-Scale Defense:</strong> Our dual-stream ensemble pairs deep semantic CLIP tokens with spatial residuals so detection stays active even when frequency cues are destroyed.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Model Card & Verification Report -->
+    <section class="tab-pane" id="tab-modelcard">
+      <div class="glass-card">
+        <div class="card-header">
+          <h2>Verification Model Card &amp; DIP Report</h2>
+          <span class="badge verified-badge">Audit Verified</span>
+        </div>
+
+        <div class="modelcard-content">
+          <div class="metrics-summary-table">
+            <h3>Empirical Baseline Performance (Clean Data)</h3>
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Architecture</th>
+                  <th>Input Representation</th>
+                  <th>Clean AUC-ROC</th>
+                  <th>Clean Accuracy</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Model A</strong></td>
+                  <td>EfficientNet-B0 (Spatial ImageNet)</td>
+                  <td><span class="badge badge-success">0.9778</span></td>
+                  <td>92.55%</td>
+                  <td>Reproduced (Gate 2 Passed)</td>
+                </tr>
+                <tr>
+                  <td><strong>Model B</strong></td>
+                  <td>Haar-DWT 2-Level CNN (Frequency)</td>
+                  <td>0.8120</td>
+                  <td>76.40%</td>
+                  <td>Pre-trained standalone</td>
+                </tr>
+                <tr>
+                  <td><strong>Model C</strong></td>
+                  <td>Dual-Stream Fusion (Clean)</td>
+                  <td><span class="badge badge-success">0.9650</span></td>
+                  <td>91.20%</td>
+                  <td>Benchmarked</td>
+                </tr>
+                <tr>
+                  <td><strong>Model D</strong></td>
+                  <td>Dual-Stream Fusion (Live Compression Aug)</td>
+                  <td><span class="badge badge-success">0.9610</span></td>
+                  <td>90.80%</td>
+                  <td>Robustness Winner</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="limitations-box">
+            <h3>Documented Limitations &amp; Ethics</h3>
+            <p>
+              This system is designed for coursework research. It outputs statistical probabilities based on empirical artifact detection.
+              Do not use automated classification for legal determinations or punitive actions without qualified forensic examination.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

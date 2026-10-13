@@ -1,0 +1,25 @@
+{
+  "deduplication_pruned_count": 3,
+  "splits": {
+    "train": {
+      "total": 1509,
+      "real": 671,
+      "fake": 838
+    },
+    "val": {
+      "total": 322,
+      "real": 143,
+      "fake": 179
+    },
+    "test": {
+      "total": 326,
+      "real": 145,
+      "fake": 181
+    },
+    "ood_test": {
+      "total": 240,
+      "real": 113,
+      "fake": 127
+    }
+  }
+}

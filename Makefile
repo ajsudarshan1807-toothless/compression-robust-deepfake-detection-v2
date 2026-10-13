@@ -23,7 +23,7 @@ train:
 	$(PYTHON) -m deepfake_detector.train.train_image
 
 eval:
-	$(PYTHON) -m deepfake_detector.eval.evaluate
+	$(PYTHON) -m deepfake_detector.eval.generate_results_md
 
 app:
 	uvicorn apps.api.main:app --reload --port 8000

@@ -108,3 +108,11 @@ async def robustness_sweep(
 
     pred = get_predictor()
     return pred.sweep_robustness(image)
+
+
+# Mount Web UI frontend as static directory
+web_dir = Path(__file__).resolve().parent.parent / "web"
+if web_dir.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
+

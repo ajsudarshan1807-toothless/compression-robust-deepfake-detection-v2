@@ -39,3 +39,34 @@ class FusionModel(nn.Module):
         if return_features:
             return fused
         return self.fusion_head(fused)
+
+
+class FusionModelV2(nn.Module):
+    """
+    CLIP Vision + Frequency Branch fusion model.
+    Eliminates semantic human face bias and provides high robustness to WhatsApp compression.
+    """
+
+    def __init__(self, pretrained_spatial: bool = False, freeze_clip: bool = True):
+        super().__init__()
+        from deepfake_detector.models.clip_branch import ClipBranch
+        self.spatial = ClipBranch(pretrained=pretrained_spatial, freeze=freeze_clip)
+        self.frequency = FrequencyBranch()
+
+        fusion_dim = self.spatial.feature_dim + self.frequency.feature_dim  # 768 + 128 = 896
+        self.fusion_head = nn.Sequential(
+            nn.Linear(fusion_dim, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, 1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor, return_features: bool = False) -> torch.Tensor:
+        spatial_feats = self.spatial(x, return_features=True)
+        freq_feats = self.frequency(x, return_features=True)
+        fused = torch.cat((spatial_feats, freq_feats), dim=1)
+        if return_features:
+            return fused
+        return self.fusion_head(fused)
+

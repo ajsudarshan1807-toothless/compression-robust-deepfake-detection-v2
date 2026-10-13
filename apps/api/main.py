@@ -36,8 +36,7 @@ predictor: Predictor | None = None
 def get_predictor() -> Predictor:
     global predictor
     if predictor is None:
-        chk_path = Path("checkpoints/model_a_spatial_clean.pt")
-        predictor = Predictor(checkpoint_path=chk_path if chk_path.exists() else None)
+        predictor = Predictor()
     return predictor
 
 

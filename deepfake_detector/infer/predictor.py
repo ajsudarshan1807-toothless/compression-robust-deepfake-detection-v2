@@ -21,7 +21,7 @@ from PIL import Image
 from deepfake_detector.data.datasets import FaceCropper, build_default_transform
 from deepfake_detector.data.degradations import jpeg_compress
 from deepfake_detector.models.clip_branch import ClipBranch
-from deepfake_detector.models.fusion import FusionModel
+from deepfake_detector.models.fusion import FusionModel, FusionModelV2
 from deepfake_detector.models.gated_fusion import GatedDualStreamFusion
 from deepfake_detector.models.spatial_branch import SpatialBranch
 from deepfake_detector.models.video import TemporalLSTMModel
@@ -79,38 +79,79 @@ class Predictor:
         self.temperature = temperature
         self.threshold_real = threshold_real
         self.threshold_fake = threshold_fake
-        self.model_version = "v1.0-clip-ensemble"
 
-        # Initialize image model (Model A / Fusion fallback)
-        self.model = SpatialBranch(num_classes=1, pretrained=False).to(self.device)
-        if checkpoint_path and Path(checkpoint_path).exists():
-            payload = safe_load_checkpoint(checkpoint_path, map_location=self.device)
+        # Auto-detect robust model if none provided
+        if checkpoint_path is None:
+            wa_chk = Path("checkpoints/model_i_whatsapp_robust.pt")
+            clean_chk = Path("checkpoints/model_a_spatial_clean.pt")
+            if wa_chk.exists():
+                checkpoint_path = wa_chk
+            elif clean_chk.exists():
+                checkpoint_path = clean_chk
+
+        chk_path = Path(checkpoint_path) if checkpoint_path else None
+        is_clip_arch = False
+
+        if chk_path and chk_path.exists():
+            payload = safe_load_checkpoint(chk_path, map_location=self.device)
             state_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
-            self.model.load_state_dict(state_dict)
-            print(f"Loaded checkpoint from {checkpoint_path}")
-        self.model.eval()
 
-        self.transform = build_default_transform(image_size=224, is_clip=False)
+            # Detect if checkpoint is FusionModelV2 (CLIP + Frequency) or SpatialBranch
+            if any("spatial.backbone" in k or "spatial.model" in k for k in state_dict.keys()):
+                self.model = FusionModelV2(pretrained_spatial=False, freeze_clip=True).to(self.device)
+                self.model.load_state_dict(state_dict)
+                is_clip_arch = True
+                self.model_version = "v2.0-clip-whatsapp-robust"
+                print(f"Loaded robust FusionModelV2 from {chk_path}")
+            else:
+                self.model = SpatialBranch(num_classes=1, pretrained=False).to(self.device)
+                self.model.load_state_dict(state_dict)
+                self.model_version = "v1.0-spatial-clean"
+                print(f"Loaded SpatialBranch from {chk_path}")
+        else:
+            self.model = SpatialBranch(num_classes=1, pretrained=False).to(self.device)
+            self.model_version = "v1.0-spatial-uninitialized"
+
+        self.model.eval()
+        self.transform = build_default_transform(image_size=224, is_clip=is_clip_arch)
         self.face_cropper = FaceCropper(margin_fraction=0.20, device=str(self.device))
         self.gated_fusion = GatedDualStreamFusion()
 
         # Lazy video models
         self._video_backbone: ClipBranch | None = None
-        self._video_model: TemporalLSTMModel | None = None
-        self._video_chk_path = Path("checkpoints/video_temporal_model.pt")
+        self._video_model = None
+        self._is_whatsapp_video = False
+        self._video_chk_path = Path("checkpoints/video_temporal_model_whatsapp.pt")
+        if not self._video_chk_path.exists():
+            self._video_chk_path = Path("checkpoints/video_temporal_model.pt")
 
-    def _get_video_models(self) -> tuple[ClipBranch, TemporalLSTMModel]:
-        if self._video_backbone is None:
-            self._video_backbone = ClipBranch(pretrained=True, freeze=True).to(self.device)
-            self._video_backbone.eval()
-
+    def _get_video_models(self):
         if self._video_model is None:
-            self._video_model = TemporalLSTMModel(in_features=768, hidden_size=128).to(self.device)
-            if self._video_chk_path.exists():
-                payload = safe_load_checkpoint(self._video_chk_path, map_location=self.device)
-                state_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
-                self._video_model.load_state_dict(state_dict)
-                print(f"Loaded video temporal checkpoint from {self._video_chk_path}")
+            wa_chk = Path("checkpoints/video_temporal_model_whatsapp.pt")
+            std_chk = Path("checkpoints/video_temporal_model.pt")
+
+            if wa_chk.exists():
+                import sys
+                sys.path.append("src")
+                from models.video_model import TemporalFusionModel
+                self._video_model = TemporalFusionModel(pretrained_spatial=False, freeze_clip=False, lstm_hidden_size=256).to(self.device)
+                payload = torch.load(wa_chk, map_location=self.device)
+                st_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
+                self._video_model.load_state_dict(st_dict)
+                self._is_whatsapp_video = True
+                print(f"Loaded TemporalFusionModel WhatsApp-robust checkpoint from {wa_chk}")
+            elif std_chk.exists():
+                self._video_backbone = ClipBranch(pretrained=True, freeze=True).to(self.device)
+                self._video_backbone.eval()
+                self._video_model = TemporalLSTMModel(in_features=768, hidden_size=128).to(self.device)
+                payload = safe_load_checkpoint(std_chk, map_location=self.device)
+                st_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
+                self._video_model.load_state_dict(st_dict)
+                self._is_whatsapp_video = False
+                print(f"Loaded TemporalLSTMModel from {std_chk}")
+            else:
+                self._video_model = TemporalLSTMModel(in_features=768, hidden_size=128).to(self.device)
+                self._is_whatsapp_video = False
             self._video_model.eval()
 
         return self._video_backbone, self._video_model
@@ -171,14 +212,33 @@ class Predictor:
         t1 = time.perf_counter()
         backbone, temporal_model = self._get_video_models()
         with torch.no_grad():
-            feats = backbone(batch_frames).unsqueeze(0)  # (1, K, 768)
-            v_score_raw, f_scores_raw = temporal_model(feats)
-            raw_video_score = float(v_score_raw.item())
-            frame_scores = [round(float(s), 4) for s in f_scores_raw.squeeze(0).cpu().numpy().tolist()]
+            if self._is_whatsapp_video:
+                seq_tensor = batch_frames.unsqueeze(0)  # (1, K, 3, 224, 224)
+                v_score_raw = temporal_model(seq_tensor)
+                raw_video_score = float(v_score_raw.item())
+                frame_scores = []
+                for k_idx in range(len(tensor_list)):
+                    f_tensor = tensor_list[k_idx].unsqueeze(0).to(self.device)
+                    try:
+                        f_score = float(temporal_model.spatial(f_tensor).item())
+                    except Exception:
+                        f_score = raw_video_score
+                    frame_scores.append(round(f_score, 4))
+            else:
+                feats = backbone(batch_frames).unsqueeze(0)  # (1, K, 768)
+                v_score_raw, f_scores_raw = temporal_model(feats)
+                raw_video_score = float(v_score_raw.item())
+                frame_scores = [round(float(s), 4) for s in f_scores_raw.squeeze(0).cpu().numpy().tolist()]
         timings["inference_ms"] = (time.perf_counter() - t1) * 1000
 
         # Calibrate score
-        p_calibrated = float(1.0 / (1.0 + np.exp(-np.log(max(1e-6, min(1.0 - 1e-6, raw_video_score))) / self.temperature)))
+        if abs(self.temperature - 1.0) < 1e-4:
+            p_calibrated = raw_video_score
+        else:
+            eps = 1e-6
+            p_c = max(eps, min(1.0 - eps, raw_video_score))
+            logit = float(np.log(p_c / (1.0 - p_c)))
+            p_calibrated = float(1.0 / (1.0 + np.exp(-logit / self.temperature)))
 
         if p_calibrated < self.threshold_real:
             state = "REAL"
@@ -273,16 +333,21 @@ class Predictor:
             face_area_ratio = box_area / float(image.size[0] * image.size[1])
         timings["face_detection_ms"] = (time.perf_counter() - t1) * 1000
 
-        # 3. Gated fusion
-        p_raw = self.gated_fusion(
-            score_global=out_global,
-            score_face=score_face,
-            face_conf=face_conf,
-            face_area_ratio=face_area_ratio,
-        )
+        # 3. Dual-stream fusion
+        if score_face is not None and face_conf >= 0.5:
+            # Weighted ensemble balancing global scene context and facial boundaries
+            p_raw = float(0.65 * out_global + 0.35 * score_face)
+        else:
+            p_raw = float(out_global)
 
-        # 4. Calibration with temperature scaling
-        p_calibrated = float(1.0 / (1.0 + np.exp(-np.log(max(1e-6, min(1.0 - 1e-6, p_raw))) / self.temperature)))
+        # 4. Calibration with proper logit temperature scaling
+        if abs(self.temperature - 1.0) < 1e-4:
+            p_calibrated = p_raw
+        else:
+            eps = 1e-6
+            p_c = max(eps, min(1.0 - eps, p_raw))
+            logit = float(np.log(p_c / (1.0 - p_c)))
+            p_calibrated = float(1.0 / (1.0 + np.exp(-logit / self.temperature)))
 
         # 5. 3-State verdict assignment
         if p_calibrated < self.threshold_real:

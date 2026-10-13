@@ -267,7 +267,7 @@ with tab1:
                     score_face = image_model(input_tensor_face).item()
                     
             if score_face is not None:
-                confidence_fake = max(score_global, score_face)
+                confidence_fake = 0.65 * score_global + 0.35 * score_face
                 diagnostics = f"Global (Background) Score: {score_global:.4f} <br/> Local (Face) Score: {score_face:.4f}"
                 st.markdown("#### Detected Face:")
                 st.image(face_img, width=150)

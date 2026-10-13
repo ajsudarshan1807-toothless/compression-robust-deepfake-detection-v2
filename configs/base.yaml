@@ -1,0 +1,53 @@
+# Base Configuration for Compression-Robust Deepfake Detection
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  splits_dir: "data/splits"
+  checkpoints_dir: "checkpoints"
+  results_dir: "results"
+  fixtures_dir: "tests/fixtures"
+
+system:
+  seed: 42
+  device: "auto" # "auto" dynamically resolves: cuda -> mps -> cpu
+  num_workers: 0 # Windows-safe default
+
+model:
+  clip_model_name: "openai/clip-vit-base-patch32"
+  image_size: 224
+  clip_feature_dim: 768
+  freq_feature_dim: 128
+  fusion_hidden_dim: 512
+  video_lstm_hidden_dim: 256
+  video_frames_count: 16
+
+training:
+  batch_size: 32
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  patience: 3
+  epochs: 5
+  label_smoothing: 0.05
+
+degradations:
+  jpeg_prob: 0.7
+  jpeg_min_qf: 15
+  jpeg_max_qf: 95
+  double_jpeg_prob: 0.3
+  clean_prob: 0.15
+  scale_min: 0.3
+  scale_max: 0.9
+  blur_sigma_max: 1.5
+
+evaluation:
+  qf_levels:
+    Clean: null
+    QF90: 90
+    QF70: 70
+    QF50: 50
+    QF30: 30
+  bootstrap_resamples: 1000
+  thresholds:
+    real_max: 0.35
+    fake_min: 0.65

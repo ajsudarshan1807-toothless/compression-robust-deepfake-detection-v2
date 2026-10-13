@@ -51,20 +51,21 @@
           </div>
 
           <div class="drop-zone" id="drop-zone">
-            <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden>
+            <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" hidden>
             <div class="drop-content" id="drop-prompt">
               <div class="upload-icon-circle">
                 <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" fill="none" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                 </svg>
               </div>
-              <p class="drop-title">Drag & drop image or <span class="highlight">browse</span></p>
-              <p class="drop-hint">Supports JPEG, PNG, WebP up to 25 MB</p>
+              <p class="drop-title">Drag & drop photo or video, or <span class="highlight">browse</span></p>
+              <p class="drop-hint">Supports Photos (JPEG, PNG, WebP) & Videos (MP4, MOV, WebM up to 100 MB)</p>
             </div>
             
             <div class="preview-wrapper" id="preview-wrapper" style="display: none;">
               <img id="preview-image" alt="Uploaded media preview">
-              <button class="btn-clear" id="btn-clear-preview" title="Remove image">&times;</button>
+              <video id="preview-video" controls autoplay muted style="display: none; max-width: 100%; max-height: 280px; border-radius: 12px;"></video>
+              <button class="btn-clear" id="btn-clear-preview" title="Remove media">&times;</button>
             </div>
           </div>
 
@@ -144,6 +145,18 @@
               </div>
               <div class="heatmap-container" id="heatmap-container">
                 <img id="heatmap-display" alt="Heatmap visual">
+              </div>
+            </div>
+
+            <!-- Video Temporal Sequence Box (for Video Uploads) -->
+            <div class="video-timeline-box" id="video-timeline-box" style="display: none;">
+              <div class="explain-header">
+                <h4>Uniform Sampled Frame Sequence</h4>
+                <span class="status-tag" id="video-frame-count-tag">16 Frames Analyzed</span>
+              </div>
+              <p class="timeline-hint">Per-frame temporal anomaly indicators across the video timeline:</p>
+              <div class="frames-timeline-strip" id="frames-timeline-strip">
+                <!-- Frame thumbnails injected by JS -->
               </div>
             </div>
 

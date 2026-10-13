@@ -110,6 +110,33 @@ async def robustness_sweep(
     return pred.sweep_robustness(image)
 
 
+@app.post("/v1/analyze/video")
+async def analyze_video(
+    file: UploadFile = File(...),
+    num_frames: int = Query(16, ge=4, le=32),
+) -> dict[str, Any]:
+    # Check max file size (100 MB)
+    contents = await file.read()
+    if len(contents) > 100 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds maximum allowed limit of 100 MB.")
+
+    import tempfile
+    suffix = Path(file.filename or "video.mp4").suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+
+    try:
+        pred = get_predictor()
+        result = pred.analyze_video(tmp_path, num_frames=num_frames)
+        from dataclasses import asdict
+        return asdict(result)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+
 # Mount Web UI frontend as static directory
 web_dir = Path(__file__).resolve().parent.parent / "web"
 if web_dir.exists():

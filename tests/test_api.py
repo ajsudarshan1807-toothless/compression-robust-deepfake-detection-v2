@@ -75,3 +75,31 @@ def test_robustness_sweep_endpoint():
     assert len(curve) > 0
     assert "qf" in curve[0]
     assert "p_fake" in curve[0]
+
+
+def test_analyze_video_endpoint(tmp_path):
+    import cv2
+    import numpy as np
+
+    # Create dummy 10-frame video
+    vid_path = tmp_path / "test_dummy.avi"
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    out = cv2.VideoWriter(str(vid_path), fourcc, 10.0, (224, 224))
+    for _ in range(10):
+        frame = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        out.write(frame)
+    out.release()
+
+    with open(vid_path, "rb") as f:
+        response = client.post(
+            "/v1/analyze/video?num_frames=8",
+            files={"file": ("test_dummy.avi", f, "video/x-msvideo")},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert "p_fake_calibrated" in data
+    assert data["state"] in {"REAL", "UNCERTAIN", "FAKE"}
+    assert "frame_scores" in data
+    assert len(data["frame_scores"]) == 8
+    assert "frame_thumbnails_b64" in data
+

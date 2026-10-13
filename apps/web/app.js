@@ -12,6 +12,7 @@ const fileInput = document.getElementById("file-input");
 const dropPrompt = document.getElementById("drop-prompt");
 const previewWrapper = document.getElementById("preview-wrapper");
 const previewImage = document.getElementById("preview-image");
+const previewVideo = document.getElementById("preview-video");
 const btnClearPreview = document.getElementById("btn-clear-preview");
 const btnAnalyze = document.getElementById("btn-analyze");
 const analyzeSpinner = document.getElementById("analyze-spinner");
@@ -30,9 +31,16 @@ const scoreFace = document.getElementById("score-face");
 const faceRatio = document.getElementById("face-ratio");
 const inferenceLatency = document.getElementById("inference-latency");
 
+const explainabilityBox = document.getElementById("explainability-box");
 const heatmapDisplay = document.getElementById("heatmap-display");
 const heatmapOpacity = document.getElementById("heatmap-opacity");
 const spectrumDisplay = document.getElementById("spectrum-display");
+
+const videoTimelineBox = document.getElementById("video-timeline-box");
+const framesTimelineStrip = document.getElementById("frames-timeline-strip");
+const videoFrameCountTag = document.getElementById("video-frame-count-tag");
+
+let isVideo = false;
 
 const qfSlider = document.getElementById("qf-slider");
 const qfValDisplay = document.getElementById("qf-val-display");
@@ -83,32 +91,59 @@ btnClearPreview.addEventListener("click", (e) => {
 });
 
 function handleFileSelected(file) {
-  if (!file.type.startsWith("image/")) {
-    alert("Please upload an image file (JPEG, PNG, WebP).");
+  const isVid = file.type.startsWith("video/") || /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name);
+  const isImg = file.type.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(file.name);
+
+  if (!isVid && !isImg) {
+    alert("Please upload an image file (JPEG, PNG, WebP) or video file (MP4, MOV, WebM).");
     return;
   }
+
   currentFile = file;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    previewImage.src = e.target.result;
-    compressedPreviewImg.src = e.target.result;
+  isVideo = isVid;
+
+  if (isVideo) {
+    previewImage.style.display = "none";
+    previewVideo.src = URL.createObjectURL(file);
+    previewVideo.style.display = "block";
+    compressedPreviewImg.src = "";
     dropPrompt.style.display = "none";
     previewWrapper.style.display = "flex";
     btnAnalyze.disabled = false;
-  };
-  reader.readAsDataURL(file);
+  } else {
+    previewVideo.style.display = "none";
+    previewVideo.pause();
+    previewVideo.src = "";
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewImage.src = e.target.result;
+      previewImage.style.display = "block";
+      compressedPreviewImg.src = e.target.result;
+      dropPrompt.style.display = "none";
+      previewWrapper.style.display = "flex";
+      btnAnalyze.disabled = false;
+    };
+    reader.readAsDataURL(file);
+  }
 }
 
 function clearSelectedFile() {
   currentFile = null;
+  isVideo = false;
   fileInput.value = "";
   previewImage.src = "";
+  previewImage.style.display = "none";
+  previewVideo.pause();
+  previewVideo.src = "";
+  previewVideo.style.display = "none";
   dropPrompt.style.display = "block";
   previewWrapper.style.display = "none";
   btnAnalyze.disabled = true;
 
   emptyState.style.display = "block";
   verdictContent.style.display = "none";
+  if (videoTimelineBox) videoTimelineBox.style.display = "none";
+  if (explainabilityBox) explainabilityBox.style.display = "block";
 }
 
 // Analyze API Call
@@ -123,24 +158,26 @@ btnAnalyze.addEventListener("click", async () => {
     formData.append("file", currentFile);
 
     let data;
+    const endpoint = isVideo ? `${API_BASE}/v1/analyze/video` : `${API_BASE}/v1/analyze/image`;
     try {
-      const resp = await fetch(`${API_BASE}/v1/analyze/image`, {
+      const resp = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
-      if (!resp.ok) throw new Error("API error");
+      if (!resp.ok) throw new Error("API error: " + resp.statusText);
       data = await resp.json();
-    } catch {
-      // Fallback demo prediction if backend server is not running
-      console.warn("Backend API not reachable. Running client-side simulation.");
-      data = simulateDemoPrediction();
+    } catch (err) {
+      console.warn("Backend API not reachable or error. Falling back to simulation: " + err.message);
+      data = isVideo ? simulateVideoPrediction() : simulateDemoPrediction();
     }
 
     currentPrediction = data;
-    displayResults(data);
-
-    // Fetch or generate robustness curve
-    fetchRobustnessCurve();
+    if (isVideo) {
+      displayVideoResults(data);
+    } else {
+      displayResults(data);
+      fetchRobustnessCurve();
+    }
   } catch (err) {
     alert("Analysis failed: " + err.message);
   } finally {
@@ -152,6 +189,8 @@ btnAnalyze.addEventListener("click", async () => {
 function displayResults(res) {
   emptyState.style.display = "none";
   verdictContent.style.display = "block";
+  if (explainabilityBox) explainabilityBox.style.display = "block";
+  if (videoTimelineBox) videoTimelineBox.style.display = "none";
 
   const p = res.p_fake_calibrated;
   const state = res.state;
@@ -187,6 +226,71 @@ function displayResults(res) {
   if (res.spectrum_png_b64) {
     spectrumDisplay.src = "data:image/png;base64," + res.spectrum_png_b64;
   }
+}
+
+function displayVideoResults(res) {
+  emptyState.style.display = "none";
+  verdictContent.style.display = "block";
+  if (explainabilityBox) explainabilityBox.style.display = "none";
+  if (videoTimelineBox) videoTimelineBox.style.display = "block";
+
+  const p = res.p_fake_calibrated;
+  const state = res.state;
+
+  verdictBanner.className = "verdict-banner " + state.toLowerCase();
+  verdictPill.textContent = state;
+
+  if (state === "REAL") {
+    verdictHeadline.textContent = "Authentic Video (Natural Motion)";
+    confidenceNum.textContent = `${((1.0 - p) * 100).toFixed(1)}% Real`;
+  } else if (state === "FAKE") {
+    verdictHeadline.textContent = "AI-Generated Video (Deepfake)";
+    confidenceNum.textContent = `${(p * 100).toFixed(1)}% Fake`;
+  } else {
+    verdictHeadline.textContent = "Uncertain Video Signature";
+    confidenceNum.textContent = `${(p * 100).toFixed(1)}% Uncertainty`;
+  }
+
+  verdictCaveat.textContent = res.caveat;
+
+  probFill.style.width = `${(p * 100).toFixed(1)}%`;
+  scoreGlobal.textContent = res.video_score.toFixed(4);
+  scoreFace.textContent = `${res.sampled_frame_count} frames`;
+  faceRatio.textContent = "BiLSTM Temporal";
+  inferenceLatency.textContent = `${res.timings_ms.total_pipeline_ms.toFixed(1)} ms`;
+
+  // Populate frame sequence strip
+  framesTimelineStrip.innerHTML = "";
+  if (videoFrameCountTag) videoFrameCountTag.textContent = `${res.sampled_frame_count} Frames Sampled`;
+
+  if (res.frame_thumbnails_b64 && res.frame_thumbnails_b64.length > 0) {
+    res.frame_thumbnails_b64.forEach((b64, i) => {
+      const item = document.createElement("div");
+      item.className = "timeline-frame-item";
+      const fScore = res.frame_scores && res.frame_scores[i] !== undefined ? res.frame_scores[i] : res.video_score;
+      const scoreColor = fScore > 0.65 ? "#ef4444" : (fScore < 0.35 ? "#10b981" : "#f59e0b");
+      
+      item.innerHTML = `
+        <img src="data:image/jpeg;base64,${b64}" alt="Frame ${i+1}">
+        <span class="timeline-frame-score" style="color: ${scoreColor}">F${i+1}: ${fScore.toFixed(2)}</span>
+      `;
+      framesTimelineStrip.appendChild(item);
+    });
+  }
+}
+
+function simulateVideoPrediction() {
+  return {
+    p_fake_calibrated: 0.1245,
+    state: "REAL",
+    video_score: 0.1245,
+    sampled_frame_count: 16,
+    frame_scores: [0.12, 0.14, 0.11, 0.15, 0.12, 0.13, 0.16, 0.11, 0.14, 0.12, 0.15, 0.13, 0.11, 0.14, 0.12, 0.13],
+    frame_thumbnails_b64: [],
+    timings_ms: { frame_extraction_ms: 120.0, inference_ms: 240.0, total_pipeline_ms: 360.0 },
+    model_version: "v1.0-clip-ensemble-temporal",
+    caveat: "Simulation mode. Video verdict based on temporal continuity across 16 frames."
+  };
 }
 
 // Heatmap Opacity

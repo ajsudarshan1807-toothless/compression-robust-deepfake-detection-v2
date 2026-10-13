@@ -183,10 +183,15 @@ def load_models():
     # Load Video Model (TemporalFusionModel)
     video_model = TemporalFusionModel(pretrained_spatial=False, freeze_clip=False, lstm_hidden_size=256).to(device)
     vid_model_path = "checkpoints/video_temporal_model_whatsapp.pt"
+    if not os.path.exists(vid_model_path):
+        vid_model_path = "checkpoints/video_temporal_model.pt"
     if os.path.exists(vid_model_path):
-        video_model.load_state_dict(torch.load(vid_model_path, map_location=device))
-    else:
-        pass # Warning shown later in video tab
+        try:
+            payload = torch.load(vid_model_path, map_location=device)
+            st_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
+            video_model.load_state_dict(st_dict)
+        except Exception:
+            pass
     video_model.eval()
     
     # Load MTCNN for Face Detection
@@ -303,7 +308,7 @@ with tab2:
     st.markdown("</div>", unsafe_allow_html=True)
 
     if uploaded_video is not None:
-        if not os.path.exists("checkpoints/video_temporal_model_whatsapp.pt"):
+        if not os.path.exists("checkpoints/video_temporal_model_whatsapp.pt") and not os.path.exists("checkpoints/video_temporal_model.pt"):
             st.warning("⚠️ Temporal Video Model weights not found! The analysis will run with uninitialized (random) weights for demonstration. Run `train_video.py` to train the model on a video dataset.")
             
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)

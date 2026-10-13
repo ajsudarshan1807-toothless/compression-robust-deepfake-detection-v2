@@ -20,9 +20,11 @@ from PIL import Image
 
 from deepfake_detector.data.datasets import FaceCropper, build_default_transform
 from deepfake_detector.data.degradations import jpeg_compress
+from deepfake_detector.models.clip_branch import ClipBranch
 from deepfake_detector.models.fusion import FusionModel
 from deepfake_detector.models.gated_fusion import GatedDualStreamFusion
 from deepfake_detector.models.spatial_branch import SpatialBranch
+from deepfake_detector.models.video import TemporalLSTMModel
 from deepfake_detector.utils import get_device, safe_load_checkpoint
 
 
@@ -35,6 +37,19 @@ class ImageAnalysisResult:
     face_box: list[int] | None
     heatmap_png_b64: str | None
     spectrum_png_b64: str | None
+    timings_ms: dict[str, float]
+    model_version: str
+    caveat: str
+
+
+@dataclass
+class VideoAnalysisResult:
+    p_fake_calibrated: float
+    state: str  # "REAL", "UNCERTAIN", "FAKE"
+    video_score: float
+    sampled_frame_count: int
+    frame_scores: list[float]
+    frame_thumbnails_b64: list[str]
     timings_ms: dict[str, float]
     model_version: str
     caveat: str
@@ -78,6 +93,115 @@ class Predictor:
         self.transform = build_default_transform(image_size=224, is_clip=False)
         self.face_cropper = FaceCropper(margin_fraction=0.20, device=str(self.device))
         self.gated_fusion = GatedDualStreamFusion()
+
+        # Lazy video models
+        self._video_backbone: ClipBranch | None = None
+        self._video_model: TemporalLSTMModel | None = None
+        self._video_chk_path = Path("checkpoints/video_temporal_model.pt")
+
+    def _get_video_models(self) -> tuple[ClipBranch, TemporalLSTMModel]:
+        if self._video_backbone is None:
+            self._video_backbone = ClipBranch(pretrained=True, freeze=True).to(self.device)
+            self._video_backbone.eval()
+
+        if self._video_model is None:
+            self._video_model = TemporalLSTMModel(in_features=768, hidden_size=128).to(self.device)
+            if self._video_chk_path.exists():
+                payload = safe_load_checkpoint(self._video_chk_path, map_location=self.device)
+                state_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
+                self._video_model.load_state_dict(state_dict)
+                print(f"Loaded video temporal checkpoint from {self._video_chk_path}")
+            self._video_model.eval()
+
+        return self._video_backbone, self._video_model
+
+    def analyze_video(
+        self,
+        video_path: str | Path,
+        num_frames: int = 16,
+    ) -> VideoAnalysisResult:
+        """
+        Analyze video file by uniformly sampling K frames and evaluating temporal sequence consistency.
+        Returns overall calibrated verdict, timeline frame scores, and base64 preview thumbnails.
+        """
+        t_start = time.perf_counter()
+        timings: dict[str, float] = {}
+
+        t0 = time.perf_counter()
+        cap = cv2.VideoCapture(str(video_path))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            total_frames = num_frames
+
+        frame_indices = np.linspace(0, max(0, total_frames - 1), num_frames, dtype=int)
+        raw_frames_rgb = []
+
+        for f_idx in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(f_idx))
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                blank = np.zeros((224, 224, 3), dtype=np.uint8)
+                raw_frames_rgb.append(blank)
+            else:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_resized = cv2.resize(frame_rgb, (224, 224))
+                raw_frames_rgb.append(frame_resized)
+        cap.release()
+        timings["frame_extraction_ms"] = (time.perf_counter() - t0) * 1000
+
+        # Create base64 JPEG thumbnails for UI display
+        thumbnails_b64: list[str] = []
+        for f_arr in raw_frames_rgb:
+            thumb = cv2.resize(f_arr, (120, 120))
+            buf = io.BytesIO()
+            Image.fromarray(thumb).save(buf, format="JPEG", quality=80)
+            thumbnails_b64.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
+
+        # Convert to CLIP normalized tensors
+        mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(3, 1, 1)
+        std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(3, 1, 1)
+        tensor_list = []
+        for f_arr in raw_frames_rgb:
+            t_frame = torch.from_numpy(f_arr).permute(2, 0, 1).float() / 255.0
+            t_frame = (t_frame - mean) / std
+            tensor_list.append(t_frame)
+        batch_frames = torch.stack(tensor_list, dim=0).to(self.device)  # (K, 3, 224, 224)
+
+        # Extract features and evaluate temporal model
+        t1 = time.perf_counter()
+        backbone, temporal_model = self._get_video_models()
+        with torch.no_grad():
+            feats = backbone(batch_frames).unsqueeze(0)  # (1, K, 768)
+            v_score_raw, f_scores_raw = temporal_model(feats)
+            raw_video_score = float(v_score_raw.item())
+            frame_scores = [round(float(s), 4) for s in f_scores_raw.squeeze(0).cpu().numpy().tolist()]
+        timings["inference_ms"] = (time.perf_counter() - t1) * 1000
+
+        # Calibrate score
+        p_calibrated = float(1.0 / (1.0 + np.exp(-np.log(max(1e-6, min(1.0 - 1e-6, raw_video_score))) / self.temperature)))
+
+        if p_calibrated < self.threshold_real:
+            state = "REAL"
+        elif p_calibrated > self.threshold_fake:
+            state = "FAKE"
+        else:
+            state = "UNCERTAIN"
+
+        timings["total_pipeline_ms"] = (time.perf_counter() - t_start) * 1000
+
+        caveat = "Video verdict is based on temporal continuity and inter-frame facial micro-motion. High H.264 compression can reduce confidence."
+
+        return VideoAnalysisResult(
+            p_fake_calibrated=round(p_calibrated, 4),
+            state=state,
+            video_score=round(raw_video_score, 4),
+            sampled_frame_count=len(raw_frames_rgb),
+            frame_scores=frame_scores,
+            frame_thumbnails_b64=thumbnails_b64,
+            timings_ms={k: round(v, 2) for k, v in timings.items()},
+            model_version=f"{self.model_version}-temporal",
+            caveat=caveat,
+        )
 
     def generate_spectrum_png_b64(self, image: Image.Image) -> str:
         """

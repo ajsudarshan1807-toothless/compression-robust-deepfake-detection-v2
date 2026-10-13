@@ -5,6 +5,7 @@ Unit tests for model architectures and tensor forward passes.
 import pytest
 import torch
 
+from deepfake_detector.models.clip_branch import ClipDetector
 from deepfake_detector.models.freq_branch import FrequencyBranch, extract_haar_dwt_features
 from deepfake_detector.models.fusion import FusionModel
 from deepfake_detector.models.spatial_branch import SpatialBranch
@@ -42,3 +43,23 @@ def test_fusion_model_forward():
     assert out.shape == (2, 1)
     fused = model(x, return_features=True)
     assert fused.shape == (2, 1408)
+
+
+def test_clip_detector_modes():
+    x = torch.randn(2, 3, 224, 224)
+
+    # 3A Linear Probe
+    model_3a = ClipDetector(mode="linear_probe", pretrained=False)
+    out_3a = model_3a(x)
+    assert out_3a.shape == (2, 1)
+
+    # 3B LoRA
+    model_3b = ClipDetector(mode="lora", pretrained=False, lora_r=8)
+    out_3b = model_3b(x)
+    assert out_3b.shape == (2, 1)
+
+    # 3C Two-Stream
+    model_3c = ClipDetector(mode="two_stream", pretrained=False, lora_r=8)
+    out_3c = model_3c(x)
+    assert out_3c.shape == (2, 1)
+

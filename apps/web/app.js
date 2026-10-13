@@ -211,6 +211,11 @@ function displayResults(res) {
 
   verdictCaveat.textContent = res.caveat;
 
+  const modelTag = document.getElementById("model-tag");
+  if (modelTag && res.model_version) {
+    modelTag.textContent = "Model: " + res.model_version;
+  }
+
   probFill.style.width = `${(p * 100).toFixed(1)}%`;
   scoreGlobal.textContent = res.p_global.toFixed(4);
   scoreFace.textContent = res.p_face !== null ? res.p_face.toFixed(4) : "N/A (No Face)";
@@ -252,6 +257,11 @@ function displayVideoResults(res) {
   }
 
   verdictCaveat.textContent = res.caveat;
+
+  const modelTag = document.getElementById("model-tag");
+  if (modelTag && res.model_version) {
+    modelTag.textContent = "Model: " + res.model_version;
+  }
 
   probFill.style.width = `${(p * 100).toFixed(1)}%`;
   scoreGlobal.textContent = res.video_score.toFixed(4);

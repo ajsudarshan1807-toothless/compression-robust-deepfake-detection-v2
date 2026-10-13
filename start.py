@@ -54,6 +54,52 @@ def get_venv_python(project_root: Path) -> Path:
     return Path(sys.executable)
 
 
+def download_file_with_progress(url: str, dest_path: Path) -> None:
+    """Download a remote file with console progress indicator."""
+    import urllib.request
+
+    print(f"[*] Downloading {dest_path.name} from GitHub Release v2.0.0...")
+    tmp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
+
+    def _reporthook(block_num, block_size, total_size):
+        downloaded = block_num * block_size
+        if total_size > 0:
+            percent = min(100.0, downloaded * 100.0 / total_size)
+            mb_done = downloaded / (1024 * 1024)
+            mb_total = total_size / (1024 * 1024)
+            sys.stdout.write(f"\r    [{percent:5.1f}%] {mb_done:6.1f} MB / {mb_total:6.1f} MB")
+            sys.stdout.flush()
+
+    try:
+        urllib.request.urlretrieve(url, tmp_path, reporthook=_reporthook)
+        print()
+        tmp_path.replace(dest_path)
+        print(f"[+] Download complete: {dest_path.name}")
+    except Exception as e:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise RuntimeError(f"Failed to download {dest_path.name}: {e}")
+
+
+def ensure_checkpoints(project_root: Path) -> None:
+    """Ensure required model weights exist in checkpoints/, auto-downloading from GitHub Release v2.0.0 if missing."""
+    checkpoints_dir = project_root / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    release_base = "https://github.com/ajsudarshan1807-toothless/compression-robust-deepfake-detection-v2/releases/download/v2.0.0"
+    models = {
+        "model_i_whatsapp_robust.pt": f"{release_base}/model_i_whatsapp_robust.pt",
+        "video_temporal_model_whatsapp.pt": f"{release_base}/video_temporal_model_whatsapp.pt",
+        "model_a_spatial_clean.pt": f"{release_base}/model_a_spatial_clean.pt",
+    }
+
+    for fname, url in models.items():
+        fpath = checkpoints_dir / fname
+        if not fpath.exists() or fpath.stat().st_size == 0:
+            print(f"\n[*] Model weight missing: {fname}")
+            download_file_with_progress(url, fpath)
+
+
 def open_browser_delayed(url: str, delay: float = 2.0) -> None:
     """Open default browser in a background thread after a short delay."""
     import threading
@@ -160,6 +206,9 @@ def main() -> None:
     print(BANNER)
     print(f"Project Directory : {project_root}")
     print(f"Python Runtime    : {python_exe}\n")
+
+    # Verify and auto-download required model weights if missing
+    ensure_checkpoints(project_root)
 
     if args.web:
         start_web_ui(project_root, python_exe, port=args.port)

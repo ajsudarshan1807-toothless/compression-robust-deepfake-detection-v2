@@ -1,5 +1,6 @@
 torch
 torchvision
+transformers
 facenet-pytorch
 pywavelets
 opencv-python
@@ -9,5 +10,8 @@ pandas
 numpy
 matplotlib
 streamlit
+fastapi
+uvicorn
+python-multipart
 tqdm
-datasets
+requests

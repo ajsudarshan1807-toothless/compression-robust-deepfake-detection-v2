@@ -109,11 +109,33 @@ This project resolves all empirical defects documented in historical audits:
 
 ## Quickstart & Installation
 
-### 1. Fresh Clone Setup
+### Option 1: One-Click Startup (Recommended)
+Anyone can clone and run the full system with a single click:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/ajsudarshan1807-toothless/compression-robust-deepfake-detection-v2.git
+cd compression-robust-deepfake-detection-v2
+
+# 2. Windows: Double-click start.bat (or run in PowerShell / CMD):
+start.bat
+# Linux / macOS:
+python start.py
+```
+
+> **Automatic First-Time Setup**:
+> On first launch, `start.bat` / `start.py` automatically:
+> 1. Creates the Python virtual environment (`.venv`) and installs dependencies.
+> 2. Auto-downloads the production model weights (`model_i_whatsapp_robust.pt` & `video_temporal_model_whatsapp.pt`) directly from [GitHub Release v2.0.0](https://github.com/ajsudarshan1807-toothless/compression-robust-deepfake-detection-v2/releases/tag/v2.0.0).
+> 3. Launches the modern forensic interface in your browser at `http://localhost:8000`.
+
+---
+
+### Option 2: Manual Terminal Setup
 ```bash
 # Clone the repository
-git clone https://github.com/ajsudarshan/deepfake-detector.git
-cd deepfake-detector
+git clone https://github.com/ajsudarshan1807-toothless/compression-robust-deepfake-detection-v2.git
+cd compression-robust-deepfake-detection-v2
 
 # Create and activate virtual environment
 python -m venv .venv
@@ -122,8 +144,12 @@ python -m venv .venv
 # On Linux/macOS:
 source .venv/bin/activate
 
-# Install in editable mode with development dependencies
-pip install -e ".[dev]"
+# Install dependencies
+pip install -r requirements.txt
+pip install -e .
+
+# Launch application
+python start.py --web
 ```
 
 ### 2. Verification & Testing
